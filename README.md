@@ -1,5 +1,6 @@
 # 什么是livego<br/>     
-livego是基于golang开发的rtmp服务器<br/>     
+livego是基于golang开发的rtmp服务器<br/>
+协议部分的核心代码，很多来源于: https://github.com/sheepbao/sms/tree/master/src/vendor/sheepbao.com/media
 <br/>     
 # 为什么基于golang
 *  ## golang在语言基本支持多核CPU均衡使用，支持海量轻量级线程，提高其并发量<br/>   
