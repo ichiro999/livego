@@ -13,6 +13,7 @@ import (
 	"github.com/livego/av"
 	log "github.com/livego/logging"
 	"github.com/livego/protocol/amf"
+	"time"
 )
 
 var (
@@ -487,6 +488,88 @@ func (connClient *ConnClient) StartSubStream(url string, index int, method strin
 	return nil
 }
 
+func (connClient *ConnClient) StartOnConn(conn net.Conn, url string, method string) error {
+	if connClient.IsStartFlag {
+		return errors.New(fmt.Sprintf("ConnClient has already started url=%s", url))
+	}
+	u, err := neturl.Parse(url)
+	if err != nil {
+		return err
+	}
+	connClient.url = url
+	path := strings.TrimLeft(u.Path, "/")
+
+	name_list := strings.Split(path, "/")
+	if len(name_list) < 2 {
+		return fmt.Errorf("u path err: %s", path)
+	}
+	for index := 0; index < len(name_list)-1; index++ {
+		if index == 0 {
+			connClient.app = fmt.Sprintf("%s", name_list[index])
+		} else {
+			connClient.app = fmt.Sprintf("%s/%s", connClient.app, name_list[index])
+		}
+	}
+	connClient.title = name_list[len(name_list)-1]
+
+	connClient.query = u.RawQuery
+	connClient.tcurl = "rtmp://" + u.Host + "/" + connClient.app
+	port := ":1935"
+	host := u.Host
+	//localIP := ":0"
+	var remoteIP string
+	if strings.Index(host, ":") != -1 {
+		host, port, err = net.SplitHostPort(host)
+		if err != nil {
+			return err
+		}
+		port = ":" + port
+	}
+	ips, err := net.LookupIP(host)
+	log.Infof("ips: %v, host: %v", ips, host)
+	if err != nil {
+		log.Error(err)
+		return err
+	}
+	remoteIP = ips[rand.Intn(len(ips))].String()
+	if strings.Index(remoteIP, ":") == -1 {
+		remoteIP += port
+	}
+
+	log.Info("connection:", "local:", conn.LocalAddr(), "remote:", conn.RemoteAddr(), "path:", path, "app:", connClient.app, "title:", connClient.title)
+
+	connClient.conn = NewConn(conn, 4*1024)
+
+	log.Info("HandshakeClient....")
+	if err := connClient.conn.HandshakeClient(); err != nil {
+		return err
+	}
+
+	log.Info("writeConnectMsg....")
+	if err := connClient.writeConnectMsg(); err != nil {
+		return err
+	}
+	log.Info("writeCreateStreamMsg....")
+	if err := connClient.writeCreateStreamMsg(); err != nil {
+		log.Error("writeCreateStreamMsg error", err)
+		return err
+	}
+
+	log.Info("method control:", method, av.PUBLISH, av.PLAY)
+	if method == av.PUBLISH {
+		if err := connClient.writePublishMsg(); err != nil {
+			return err
+		}
+	} else if method == av.PLAY {
+		if err := connClient.writePlayMsg(); err != nil {
+			return err
+		}
+	}
+
+	connClient.IsStartFlag = true
+	return nil
+}
+
 func (connClient *ConnClient) Start(url string, method string) error {
 	if connClient.IsStartFlag {
 		return errors.New(fmt.Sprintf("ConnClient has already started url=%s", url))
@@ -522,7 +605,7 @@ func (connClient *ConnClient) Start(url string, method string) error {
 	connClient.tcurl = "rtmp://" + u.Host + "/" + connClient.app
 	port := ":1935"
 	host := u.Host
-	localIP := ":0"
+	//localIP := ":0"
 	var remoteIP string
 	if strings.Index(host, ":") != -1 {
 		host, port, err = net.SplitHostPort(host)
@@ -541,19 +624,22 @@ func (connClient *ConnClient) Start(url string, method string) error {
 	if strings.Index(remoteIP, ":") == -1 {
 		remoteIP += port
 	}
-
-	local, err := net.ResolveTCPAddr("tcp", localIP)
-	if err != nil {
-		log.Error(err)
-		return err
-	}
-	log.Info("remoteIP: ", remoteIP)
-	remote, err := net.ResolveTCPAddr("tcp", remoteIP)
-	if err != nil {
-		log.Error(err)
-		return err
-	}
-	conn, err := net.DialTCP("tcp", local, remote)
+	/*
+		local, err := net.ResolveTCPAddr("tcp", localIP)
+		if err != nil {
+			log.Error(err)
+			return err
+		}
+		log.Info("remoteIP: ", remoteIP)
+		remote, err := net.ResolveTCPAddr("tcp", remoteIP)
+		if err != nil {
+			log.Error(err)
+			return err
+		}
+	*/
+	d := net.Dialer{Timeout: 5 * time.Second}
+	conn, err := d.Dial("tcp", remoteIP)
+	//conn, err := net.DialTCP("tcp", local, remote)
 	if err != nil {
 		log.Error(err)
 		return err

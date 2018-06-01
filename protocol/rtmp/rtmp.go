@@ -146,7 +146,7 @@ func (s *Server) handleConn(conn *core.Conn) error {
 		s.handler.HandleReader(reader)
 		log.Infof("new publisher: %v", reader.Info())
 
-		if s.getter != nil {
+		if s.getter != nil { //http-hls enable
 			writeType := reflect.TypeOf(s.getter)
 			log.Infof("handleConn:writeType=%v", writeType)
 			writer := s.getter.GetWriter(reader.Info())

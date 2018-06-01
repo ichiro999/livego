@@ -152,6 +152,7 @@ func (self *RtmpRelay) reconnectPush() error {
 	self.pushReconnectFlag = false
 	return nil
 }
+
 func (self *RtmpRelay) sendPublishChunkStream() {
 	lasttimestamp := time.Now().Unix()
 	for {

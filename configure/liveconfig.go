@@ -180,7 +180,12 @@ func GetExecPushDone() []string {
 }
 
 func GetChunkSize() int {
+	if RtmpServercfg.Chunksize > 0 {
+		return RtmpServercfg.Chunksize
+	}
+	RtmpServercfg.Chunksize = 4096
 	return RtmpServercfg.Chunksize
+}
 }
 
 func IsHttpOperEnable() bool {
@@ -272,7 +277,7 @@ func GetStaticPushUrlList(rtmpurl string) (retArray []string, bRet bool) {
 				} else {
 					newUrl = url[index+1:]
 				}
-				destUrl := fmt.Sprintf("%s/%s", upstream, newUrl)
+				destUrl := fmt.Sprintf("%s/%s/%s", upstream, masterPrefix, newUrl)
 				retArray = append(retArray, destUrl)
 				bRet = true
 			}

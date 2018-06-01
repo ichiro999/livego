@@ -3,10 +3,13 @@ package core
 import (
 	"bufio"
 	"io"
+	"net"
+	"time"
 )
 
 type ReadWriter struct {
 	*bufio.ReadWriter
+	rtmpConn   io.ReadWriter
 	readError  error
 	writeError error
 }
@@ -14,6 +17,7 @@ type ReadWriter struct {
 func NewReadWriter(rw io.ReadWriter, bufSize int) *ReadWriter {
 	return &ReadWriter{
 		ReadWriter: bufio.NewReadWriter(bufio.NewReaderSize(rw, bufSize), bufio.NewWriterSize(rw, bufSize)),
+		rtmpConn:   rw,
 	}
 }
 
@@ -77,6 +81,9 @@ func (rw *ReadWriter) Write(p []byte) (int, error) {
 	if rw.writeError != nil {
 		return 0, rw.writeError
 	}
+	conn := rw.rtmpConn.(net.Conn)
+	conn.SetWriteDeadline(time.Now().Add(2 * time.Second))
+
 	return rw.ReadWriter.Write(p)
 }
 

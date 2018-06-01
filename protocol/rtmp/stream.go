@@ -75,6 +75,7 @@ func (rs *RtmpStream) HandleWriter(w av.WriteCloser) {
 	var s *Stream
 	ok := rs.streams.Has(info.Key)
 	if !ok {
+		log.Warningf("No rtmp stream exist, create new Stream, info:%v", info)
 		s = NewStream()
 		rs.streams.Set(info.Key, s)
 		s.info = info
@@ -98,7 +99,7 @@ func (rs *RtmpStream) CheckAlive() {
 		for item := range rs.streams.IterBuffered() {
 			v := item.Val.(*Stream)
 			if v.CheckAlive() == 0 {
-				log.Infof("RtmpStream.CheckAlive remove(%s)", item.Key)
+				log.Infof("RtmpStream.CheckAlive remove info:%s", v.info)
 				rs.streams.Remove(item.Key)
 			}
 		}
@@ -138,6 +139,10 @@ func (s *Stream) ID() string {
 
 func (s *Stream) GetReader() av.ReadCloser {
 	return s.r
+}
+
+func (s *Stream) GetInfo() av.Info {
+	return s.info
 }
 
 func (s *Stream) GetWs() cmap.ConcurrentMap {
