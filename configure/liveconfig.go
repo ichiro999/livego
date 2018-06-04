@@ -186,7 +186,6 @@ func GetChunkSize() int {
 	RtmpServercfg.Chunksize = 4096
 	return RtmpServercfg.Chunksize
 }
-}
 
 func IsHttpOperEnable() bool {
 	httpOper := strings.ToLower(RtmpServercfg.Httpoper)
