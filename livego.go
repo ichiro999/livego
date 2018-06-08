@@ -146,15 +146,17 @@ func startHTTPOpera(stream *rtmp.RtmpStream, l net.Listener, hlsServer *hls.Serv
 
 	rtmpAddr := fmt.Sprintf(":%d", configure.GetListenPort())
 	opServer := httpopera.NewServer(stream, rtmpAddr, hlsServer)
-	go func() {
+	log.Info("HTTP-Operation listen On", operaAddr)
+
+	go func(l net.Listener, server *httpopera.Server) {
 		defer func() {
 			if r := recover(); r != nil {
 				log.Error("HTTP-Operation server panic: ", r)
 			}
 		}()
-		log.Info("HTTP-Operation listen On", operaAddr)
-		opServer.Serve(opListen)
-	}()
+
+		server.Serve(l)
+	}(opListen, opServer)
 
 	return opListen
 }

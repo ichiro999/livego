@@ -52,8 +52,10 @@ const (
 )
 
 var (
-	PUBLISH = "publish"
-	PLAY    = "play"
+	PUBLISH  = "publish"
+	PLAY     = "play"
+	QUIC_CONNTYPE = "quic"
+	TCP_CONNTYPE  = "tcp"
 )
 
 // Header can be converted to AudioHeaderInfo or VideoHeaderInfo
@@ -151,6 +153,22 @@ type WriteCloser interface {
 	Alive
 	CalcTime
 	Write(*Packet) error
+}
+
+func IsVideoHdr(packet []byte) (ret bool) {
+    ret = false
+	if packet[0] == 0x17 && packet[1] == 0x00 {
+		ret = true
+	}
+	return
+}
+
+func IsAudioHdr(packet []byte) (ret bool) {
+	ret = false
+	if packet[0] == 0xaf && packet[1] == 0x00 {
+		ret = true
+	}
+	return
 }
 
 func IsH264IFrame(packet []byte) bool {

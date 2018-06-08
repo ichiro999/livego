@@ -30,6 +30,11 @@ import (
 }
 */
 
+var (
+	CONN_TCP_TYPE = "tcp"
+	CONN_QUIC_TYPE = "quic"
+)
+
 type RecordConfig struct {
 	Master_prefix string `json:"master_prefix"`
 	Recordtype    string `json:"type"`
@@ -42,6 +47,7 @@ type SubStaticPush struct {
 }
 
 type StaticPushInfo struct {
+	ConnType      string
 	Master_prefix string
 	Upstream      string
 }
@@ -245,14 +251,17 @@ func GetStaticPullList() (pullInfoList []StaticPullInfo, bRet bool) {
 	return
 }
 
-func GetStaticPushUrlList(rtmpurl string) (retArray []string, bRet bool) {
+func GetStaticPushUrlList(rtmpurl string) (connTypeArray []string, retArray []string, bRet bool) {
 	if !isStaticPushEnable {
-		return nil, false
+		return nil, nil,false
 	}
 
 	retArray = nil
 	bRet = false
 
+	if len(rtmpurl) <= 7 {
+		log.Errorf("rtmp url error, url=%s", rtmpurl)
+	}
 	//log.Printf("rtmpurl=%s", rtmpurl)
 	url := rtmpurl[7:]
 
@@ -278,6 +287,11 @@ func GetStaticPushUrlList(rtmpurl string) (retArray []string, bRet bool) {
 				}
 				destUrl := fmt.Sprintf("%s/%s/%s", upstream, masterPrefix, newUrl)
 				retArray = append(retArray, destUrl)
+				if len(staticpushItem.ConnType) == 0 {
+					connTypeArray = append(connTypeArray, CONN_TCP_TYPE)
+				} else {
+					connTypeArray = append(connTypeArray, CONN_QUIC_TYPE)
+				}
 				bRet = true
 			}
 		}

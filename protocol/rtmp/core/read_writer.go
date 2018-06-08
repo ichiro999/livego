@@ -25,6 +25,9 @@ func (rw *ReadWriter) Read(p []byte) (int, error) {
 	if rw.readError != nil {
 		return 0, rw.readError
 	}
+	conn := rw.rtmpConn.(net.Conn)
+	conn.SetReadDeadline(time.Now().Add(8 * time.Second))
+
 	n, err := io.ReadAtLeast(rw.ReadWriter, p, len(p))
 	rw.readError = err
 	return n, err

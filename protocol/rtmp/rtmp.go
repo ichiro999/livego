@@ -187,6 +187,7 @@ type VirWriter struct {
 	conn        StreamReadWriteCloser
 	packetQueue chan *av.Packet
 	WriteBWInfo av.StaticsBW
+	lastT       int64
 }
 
 func NewVirWriter(conn StreamReadWriteCloser) *VirWriter {
@@ -199,12 +200,15 @@ func NewVirWriter(conn StreamReadWriteCloser) *VirWriter {
 	}
 
 	go ret.Check()
+
 	go func() {
 		err := ret.SendPacket()
 		if err != nil {
-			log.Error(err)
+			_, _, url, _ := conn.GetInfo()
+			log.Errorf("VirWriter SendPacket(%v) error:%v", url, err)
 		}
 	}()
+
 	return ret
 }
 
@@ -238,7 +242,10 @@ func (v *VirWriter) Check() {
 	var c core.ChunkStream
 	for {
 		if err := v.conn.Read(&c); err != nil {
-			v.Close(err)
+			nowT := time.Now().UnixNano()/(1000*1000)
+			if v.lastT != 0 && (nowT - v.lastT) > 10*1000 {
+				v.Close(err)
+			}
 			return
 		}
 	}
@@ -277,6 +284,12 @@ func (v *VirWriter) DropPacket(pktQue chan *av.Packet, info av.Info) {
 
 //
 func (v *VirWriter) Write(p *av.Packet) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Errorf("write to player already closed info(%v) error panic:%v", v.Info())
+			err = errors.New(fmt.Sprintf("write to player already closed info(%v) error panic:%v", v.Info()))
+		}
+	}()
 	err = nil
 
 	if v.closed {
@@ -289,6 +302,8 @@ func (v *VirWriter) Write(p *av.Packet) (err error) {
 			err = errors.New(errString)
 		}
 	}()
+	v.lastT = time.Now().UnixNano()/(1000*1000)
+
 	if len(v.packetQueue) >= maxQueueNum-24 {
 		v.DropPacket(v.packetQueue, v.Info())
 	} else {
