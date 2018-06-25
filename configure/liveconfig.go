@@ -261,6 +261,7 @@ func GetStaticPushUrlList(rtmpurl string) (connTypeArray []string, retArray []st
 
 	if len(rtmpurl) <= 7 {
 		log.Errorf("rtmp url error, url=%s", rtmpurl)
+		return
 	}
 	//log.Printf("rtmpurl=%s", rtmpurl)
 	url := rtmpurl[7:]
