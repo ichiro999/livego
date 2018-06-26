@@ -56,6 +56,7 @@ func (rs *RtmpStream) HandleReader(r av.ReadCloser) {
 			ns := NewStream()
 			stream.Copy(ns)
 			stream = ns
+			stream.info = info
 			rs.streams.Set(info.Key, ns)
 		}
 	} else {

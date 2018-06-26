@@ -133,6 +133,16 @@ func (self *RtmpPush) sendAudioHdr(timestamp uint32) error {
 	return nil
 }
 
+func (self *RtmpPush) sendOnMeta(timestamp uint32) error {
+	err := self.connectPushClient.WriteBaseMeta("1.0", 15, 0, 0, 44100, 16)
+	if err != nil {
+		log.Errorf("rtmp push onMeta error:%v", err)
+		return err
+	}
+	log.Warningf("rtmp push onMeta ok, url=%s", self.url)
+	return nil
+}
+
 func (self *RtmpPush) onWork() {
 	defer func() {
 		log.Warningf("rtmp push onWork is over, url=%s", self.url)
@@ -168,6 +178,7 @@ func (self *RtmpPush) onWork() {
 		if !self.connectFlag {
 			err := self.rtmpConnect()
 			if err == nil {
+				self.sendOnMeta(csPacket.Timestamp)
 				self.sendVideoHdr(csPacket.Timestamp)
 				self.sendAudioHdr(csPacket.Timestamp)
 			}
