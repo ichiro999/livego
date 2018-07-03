@@ -55,7 +55,7 @@ func NewRtmpPushByConn(url string, conn *net.Conn) *RtmpPush {
 }
 
 func (self *RtmpPush) rtmpDisconnect() {
-	if self.connectPushClient != nil {
+	if self.connectPushClient != nil && self.connectFlag {
 		self.connectPushClient.Close(nil)
 		self.connectPushClient = nil
 		log.Warningf("rtmp push disconnect, url=%s", self.url)
@@ -67,8 +67,6 @@ func (self *RtmpPush) rtmpDisconnect() {
 
 func (self *RtmpPush) rtmpConnect() error {
 	var err error
-	self.rtmpDisconnect()
-
 	self.connectPushClient = core.NewConnClient()
 
 	if self.clientConn != nil {
@@ -146,7 +144,6 @@ func (self *RtmpPush) sendOnMeta(timestamp uint32) error {
 func (self *RtmpPush) onWork() {
 	defer func() {
 		log.Warningf("rtmp push onWork is over, url=%s", self.url)
-		self.endChann <-1
 	}()
 	log.Warningf("rtmp push onWork is running, url=%s", self.url)
 	for {
@@ -154,10 +151,12 @@ func (self *RtmpPush) onWork() {
 			break
 		}
 
-		self.wait()
+		ok := self.wait()
+		if !ok {
+			break
+		}
 
 		csPacket := self.getDataFromQueue()
-
 		if csPacket == nil {
 			continue
 		}
@@ -198,9 +197,14 @@ func (self *RtmpPush) onWork() {
 		csPacket.StreamID = self.connectPushClient.GetStreamId()
 		err := self.connectPushClient.Write(*csPacket)
 		if err != nil {
+			log.Errorf("rtmppush write(%s) error:%v", self.url, err)
 			self.rtmpDisconnect()
+			time.Sleep(250*time.Millisecond)
 		}
 	}
+	log.Warningf("rtmppush is over, url=%s", self.url)
+	self.rtmpDisconnect()
+	close(self.endChann)
 }
 
 func (self *RtmpPush) Start() error {
@@ -220,13 +224,17 @@ func (self *RtmpPush) Stop() {
 	}
 
 	self.isStart = false
-	self.notify()
+	close(self.signalChan)
 	log.Warningf("Rtmp push stop, url=%s", self.url)
-	self.rtmpDisconnect()
 	<- self.endChann
 }
 
 func (self *RtmpPush) notify() {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Errorf("rtmp push(url=%s) notify panic:%v", r)
+		}
+	}()
 	self.signalChan <- 1
 }
 
@@ -235,7 +243,7 @@ func (self *RtmpPush) wait() (ret bool) {
 	case _, ret = <- self.signalChan:
 		break
 	case <- time.After(200*time.Millisecond):
-		ret = false
+		ret = true
 		break
 	}
 

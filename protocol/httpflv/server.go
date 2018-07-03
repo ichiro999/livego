@@ -86,6 +86,7 @@ func (server *Server) handleConn(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	log.Infof("http flv req:\r\n%v", r)
 	url := r.URL.String()
 	u := r.URL.Path
 	if pos := strings.LastIndex(u, "."); pos < 0 || u[pos:] != ".flv" {
@@ -106,4 +107,5 @@ func (server *Server) handleConn(w http.ResponseWriter, r *http.Request) {
 
 	server.handler.HandleWriter(writer)
 	writer.Wait()
+	log.Debugf("handleConn is over:%v, subpath=%s", r.URL, r.URL.Path)
 }

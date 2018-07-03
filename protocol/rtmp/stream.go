@@ -78,6 +78,7 @@ func (rs *RtmpStream) HandleWriter(w av.WriteCloser) {
 		log.Warningf("No rtmp stream exist, create new Stream, info:%v", info)
 		s = NewStream()
 		rs.streams.Set(info.Key, s)
+		s.AddWriter(w)
 		s.info = info
 	} else {
 		item, ok := rs.streams.Get(info.Key)
