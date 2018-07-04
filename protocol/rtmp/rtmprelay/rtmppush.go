@@ -144,6 +144,9 @@ func (self *RtmpPush) sendOnMeta(timestamp uint32) error {
 func (self *RtmpPush) onWork() {
 	defer func() {
 		log.Warningf("rtmp push onWork is over, url=%s", self.url)
+		if r := recover(); r != nil {
+			log.Errorf("rtmppush onwork is over, url(%s), panic:%v", self.url, r)
+		}
 	}()
 	log.Warningf("rtmp push onWork is running, url=%s", self.url)
 	for {
@@ -204,7 +207,7 @@ func (self *RtmpPush) onWork() {
 	}
 	log.Warningf("rtmppush is over, url=%s", self.url)
 	self.rtmpDisconnect()
-	close(self.endChann)
+	self.endChann <- 1
 }
 
 func (self *RtmpPush) Start() error {
@@ -219,6 +222,11 @@ func (self *RtmpPush) Start() error {
 }
 
 func (self *RtmpPush) Stop() {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Errorf("rtmppush stop url(%s) panic:%v", self.url, r)
+		}
+	}()
 	if !self.isStart {
 		return
 	}
@@ -227,6 +235,8 @@ func (self *RtmpPush) Stop() {
 	close(self.signalChan)
 	log.Warningf("Rtmp push stop, url=%s", self.url)
 	<- self.endChann
+
+	close(self.endChann)
 }
 
 func (self *RtmpPush) notify() {
