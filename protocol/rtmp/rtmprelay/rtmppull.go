@@ -8,7 +8,9 @@ import (
 	"github.com/livego/av"
 	log "github.com/livego/logging"
 	"time"
+	"sync"
 )
+
 type RtmpPull struct {
 	url string
 	clientConn *net.Conn
@@ -17,6 +19,7 @@ type RtmpPull struct {
 	connectFlag bool
 	connectPlayClient    *core.ConnClient
 	writer Writer
+	connLock sync.Locker
 }
 
 func NewRtmpPull(url string) *RtmpPull {
@@ -40,7 +43,15 @@ func NewRtmpPullbyConn(url string, conn *net.Conn) *RtmpPull {
 }
 
 func (self *RtmpPull) rtmpDisconnect() {
-	if self.connectPlayClient != nil {
+	self.connLock.Lock()
+	defer func() {
+		self.connLock.Unlock()
+		if r := recover(); r != nil {
+			log.Errorf("rtmppull rtmpDisconnect url(%s) panic:%v", self.url, r)
+		}
+	}()
+
+	if self.connectPlayClient != nil && self.connectFlag {
 		self.connectPlayClient.Close(nil)
 		self.connectPlayClient = nil
 		log.Warningf("rtmp pull disconnect, url=%s", self.url)
@@ -49,8 +60,15 @@ func (self *RtmpPull) rtmpDisconnect() {
 }
 
 func (self *RtmpPull) rtmpConnect() error {
+	self.connLock.Lock()
+	defer func() {
+		self.connLock.Unlock()
+		if r := recover(); r != nil {
+			log.Errorf("rtmppull rtmpDisconnect url(%s) panic:%v", self.url, r)
+		}
+	}()
+
 	var err error
-    self.rtmpDisconnect()
 
 	self.connectPlayClient = core.NewConnClient()
 
@@ -73,11 +91,9 @@ func (self *RtmpPull) rtmpConnect() error {
 
 func (self *RtmpPull) onWork() {
 	defer func() {
-		log.Warningf("rtmp pull onwork is over, url=%s", self.url)
 		if r := recover(); r != nil {
 			log.Errorf("rtmp pull onwork is over, url=%s, panic=%v", self.url, r)
 		}
-		self.endChann <- 1
 	}()
 	for {
 		if !self.isStart {
@@ -95,7 +111,6 @@ func (self *RtmpPull) onWork() {
 		csPacket := &core.ChunkStream{}
 		err := self.connectPlayClient.Read(csPacket)
 		if err != nil {
-			self.connectFlag = false
 			self.rtmpDisconnect()
 			continue
 		}
@@ -107,6 +122,8 @@ func (self *RtmpPull) onWork() {
 			self.writer.Send(csPacket)
 		}
 	}
+	self.rtmpDisconnect()
+	self.endChann <- 1
 }
 
 func (self *RtmpPull) Start() error {
@@ -128,7 +145,6 @@ func (self *RtmpPull) Stop() {
 
 	self.isStart = false
 	log.Warningf("Rtmp pull stop url=%s", self.url)
-	self.rtmpDisconnect()
 	<- self.endChann
 	return
 }

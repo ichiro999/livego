@@ -109,7 +109,7 @@ type GetWriter interface {
 }
 
 type Handler interface {
-	HandleReader(ReadCloser)
+	HandleReader(ReadCloser) error
 	HandleWriter(WriteCloser)
 }
 

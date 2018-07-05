@@ -24,8 +24,8 @@ const (
 )
 
 var (
-	readTimeout  = flag.Int("readTimeout", 10, "read time out")
-	writeTimeout = flag.Int("writeTimeout", 10, "write time out")
+	readTimeout  = flag.Int("readTimeout", 5, "read time out")
+	writeTimeout = flag.Int("writeTimeout", 5, "write time out")
 )
 
 type Client struct {
@@ -143,7 +143,11 @@ func (s *Server) handleConn(conn *core.Conn) error {
 					}
 				}
 		*/
-		s.handler.HandleReader(reader)
+		err := s.handler.HandleReader(reader)
+        if err != nil {
+			connServer.Close(err)
+			return err
+		}
 		log.Infof("new publisher: %v", reader.Info())
 
 		if s.getter != nil { //http-hls enable
@@ -386,7 +390,7 @@ func NewVirReader(conn StreamReadWriteCloser) *VirReader {
 	return &VirReader{
 		Uid:        uid.NewId(),
 		conn:       conn,
-		RWBaser:    av.NewRWBaser(time.Second * time.Duration(*writeTimeout)),
+		RWBaser:    av.NewRWBaser(time.Second * time.Duration(*readTimeout)),
 		demuxer:    flv.NewDemuxer(),
 		ReadBWInfo: av.StaticsBW{0, "", 0, 0, 0, 0, 0, 0, 0},
 	}

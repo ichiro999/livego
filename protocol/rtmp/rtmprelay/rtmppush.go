@@ -23,6 +23,7 @@ type RtmpPush struct {
 	connectPushClient *core.ConnClient
 	mediaPacketList *singlylinkedlist.List
 	queueLock sync.RWMutex
+	startLock sync.RWMutex
 	signalChan chan int
 	videoHdr   []byte
 	audioHdr   []byte
@@ -49,12 +50,18 @@ func NewRtmpPushByConn(url string, conn *net.Conn) *RtmpPush {
 		clientConn:conn,
 		isStart: false,
 		endChann: make(chan int),
+		signalChan: make(chan int, RELAY_BUFFER_MAX),
 		connectFlag: false,
 		connectPushClient: nil,
 	}
 }
 
 func (self *RtmpPush) rtmpDisconnect() {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Errorf("rtmpDisconnect url=%s panic:%v", self.url, r)
+		}
+	}()
 	if self.connectPushClient != nil && self.connectFlag {
 		self.connectPushClient.Close(nil)
 		self.connectPushClient = nil
@@ -66,6 +73,11 @@ func (self *RtmpPush) rtmpDisconnect() {
 }
 
 func (self *RtmpPush) rtmpConnect() error {
+	defer func() {
+		if r := recover(); r != nil {
+			log.Errorf("rtmpConnect url=%s panic:%v", self.url, r)
+		}
+	}()
 	var err error
 	self.connectPushClient = core.NewConnClient()
 
@@ -94,7 +106,6 @@ func (self *RtmpPush) sendVideoHdr(timestamp uint32) error {
 	csPacket.Data = self.videoHdr
 	csPacket.Length = uint32(len(self.videoHdr))
 	csPacket.Timestamp = timestamp
-	csPacket.StreamID = self.connectPushClient.GetStreamId()
 	csPacket.TypeID = av.TAG_VIDEO
 
 	err := self.connectPushClient.Write(csPacket)
@@ -117,7 +128,6 @@ func (self *RtmpPush) sendAudioHdr(timestamp uint32) error {
 	csPacket.Data = self.audioHdr
 	csPacket.Length = uint32(len(self.audioHdr))
 	csPacket.Timestamp = timestamp
-	csPacket.StreamID = self.connectPushClient.GetStreamId()
 	csPacket.TypeID = av.TAG_AUDIO
 
 	err := self.connectPushClient.Write(csPacket)
@@ -137,13 +147,12 @@ func (self *RtmpPush) sendOnMeta(timestamp uint32) error {
 		log.Errorf("rtmp push onMeta error:%v", err)
 		return err
 	}
-	log.Warningf("rtmp push onMeta ok, url=%s", self.url)
+	log.Debugf("rtmp push onMeta ok, url=%s", self.url)
 	return nil
 }
 
 func (self *RtmpPush) onWork() {
 	defer func() {
-		log.Warningf("rtmp push onWork is over, url=%s", self.url)
 		if r := recover(); r != nil {
 			log.Errorf("rtmppush onwork is over, url(%s), panic:%v", self.url, r)
 		}
@@ -197,7 +206,6 @@ func (self *RtmpPush) onWork() {
 			continue;
 		}
 
-		csPacket.StreamID = self.connectPushClient.GetStreamId()
 		err := self.connectPushClient.Write(*csPacket)
 		if err != nil {
 			log.Errorf("rtmppush write(%s) error:%v", self.url, err)
@@ -205,12 +213,13 @@ func (self *RtmpPush) onWork() {
 			time.Sleep(250*time.Millisecond)
 		}
 	}
-	log.Warningf("rtmppush is over, url=%s", self.url)
 	self.rtmpDisconnect()
 	self.endChann <- 1
 }
 
 func (self *RtmpPush) Start() error {
+	self.startLock.Lock()
+	defer self.startLock.Unlock()
 	if self.isStart {
         return errors.New(fmt.Sprintf("Rtmp push has been already started, url=%s", self.url))
 	}
@@ -222,7 +231,9 @@ func (self *RtmpPush) Start() error {
 }
 
 func (self *RtmpPush) Stop() {
+	self.startLock.Lock()
 	defer func() {
+		self.startLock.Unlock()
 		if r := recover(); r != nil {
 			log.Errorf("rtmppush stop url(%s) panic:%v", self.url, r)
 		}
@@ -233,9 +244,15 @@ func (self *RtmpPush) Stop() {
 
 	self.isStart = false
 	close(self.signalChan)
-	log.Warningf("Rtmp push stop, url=%s", self.url)
-	<- self.endChann
+	log.Warningf("Rtmp push is stopping, url=%s", self.url)
+	select {
+	case <- self.endChann:
+		break
+	case <- time.After(2*time.Second):
+		break
+	}
 
+	log.Warningf("Rtmp push has stopped, url=%s", self.url)
 	close(self.endChann)
 }
 

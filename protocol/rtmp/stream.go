@@ -43,29 +43,36 @@ func (rs *RtmpStream) IsExist(r av.ReadCloser) bool {
 	return false
 }
 
-func (rs *RtmpStream) HandleReader(r av.ReadCloser) {
+func (rs *RtmpStream) HandleReader(r av.ReadCloser) (err error) {
+	err = nil
 	info := r.Info()
 	log.Infof("HandleReader: info[%v]", info)
 
 	var stream *Stream
 	i, ok := rs.streams.Get(info.Key)
 	if stream, ok = i.(*Stream); ok {
+		if stream.IsPublishFlag {
+			log.Warningf("stream publish is not over, info[%s:%s]", stream.GetInfo().Key, stream.GetInfo().UID)
+			err = errors.New(fmt.Sprintf("stream publish is not over, info[%s:%s]", stream.GetInfo().Key, stream.GetInfo().UID))
+			return
+		}
 		stream.TransStop()
 		id := stream.ID()
 		if id != EmptyID && id != info.UID {
-			ns := NewStream()
+			ns := NewStream(true)
 			stream.Copy(ns)
 			stream = ns
 			stream.info = info
 			rs.streams.Set(info.Key, ns)
 		}
 	} else {
-		stream = NewStream()
+		stream = NewStream(true)
 		rs.streams.Set(info.Key, stream)
 		stream.info = info
 	}
 
 	stream.AddReader(r)
+	return
 }
 
 func (rs *RtmpStream) HandleWriter(w av.WriteCloser) {
@@ -76,7 +83,7 @@ func (rs *RtmpStream) HandleWriter(w av.WriteCloser) {
 	ok := rs.streams.Has(info.Key)
 	if !ok {
 		log.Warningf("No rtmp stream exist, create new Stream, info:%v", info)
-		s = NewStream()
+		s = NewStream(false)
 		rs.streams.Set(info.Key, s)
 		s.AddWriter(w)
 		s.info = info
@@ -95,7 +102,7 @@ func (rs *RtmpStream) GetStreams() cmap.ConcurrentMap {
 
 func (rs *RtmpStream) CheckAlive() {
 	for {
-		<-time.After(5 * time.Second)
+		<-time.After(300 * time.Millisecond)
 		//log.Infof("RtmpStream.CheckAlive count=%d", rs.streams.Count())
 		for item := range rs.streams.IterBuffered() {
 			v := item.Val.(*Stream)
@@ -108,11 +115,12 @@ func (rs *RtmpStream) CheckAlive() {
 }
 
 type Stream struct {
-	isStart bool
-	cache   *cache.Cache
-	r       av.ReadCloser
-	ws      cmap.ConcurrentMap
-	info    av.Info
+	isStart       bool
+	cache         *cache.Cache
+	r             av.ReadCloser
+	ws            cmap.ConcurrentMap
+	info          av.Info
+	IsPublishFlag bool
 }
 
 type PackWriterCloser struct {
@@ -124,10 +132,11 @@ func (p *PackWriterCloser) GetWriter() av.WriteCloser {
 	return p.w
 }
 
-func NewStream() *Stream {
+func NewStream(isPublishFlag bool) *Stream {
 	return &Stream{
-		cache: cache.NewCache(),
-		ws:    cmap.New(),
+		cache:        cache.NewCache(),
+		ws:           cmap.New(),
+		IsPublishFlag:isPublishFlag,
 	}
 }
 
@@ -230,54 +239,79 @@ func (s *Stream) StopStaticPush() {
 }
 
 func (s *Stream) IsSendStaticPush() bool {
-	_, pushurllist, err := rtmprelay.GetStaticPushList(s.info.URL)
+	connTypeList, pushurllist, err := rtmprelay.GetStaticPushList(s.info.URL)
 	if err != nil || len(pushurllist) < 1 {
 		return false
 	}
 
-	for _, pushurl := range pushurllist {
+	for index, pushurl := range pushurllist {
 		staticpushObj, err := rtmprelay.GetStaticPushObject(pushurl)
 		if (staticpushObj != nil) && (err == nil) {
 			return true
-
 		} else {
 			log.Errorf("SendStaticPush GetStaticPushObject %s error", pushurl)
+			staticpushObj := rtmprelay.GetAndCreateStaticPushObject(connTypeList[index], pushurl)
+			if staticpushObj != nil {
+				err = staticpushObj.Start()
+				if err != nil {
+					log.Errorf("restart staticpush error url=%s, error=%v", pushurl, err)
+					return false
+				}
+				log.Warningf("restart staticpush ok url=%s", pushurl)
+				return true
+			}
 		}
 	}
 	return false
 }
 
 func (s *Stream) SendStaticPush(packet av.Packet) {
-	_, pushurllist, err := rtmprelay.GetStaticPushList(s.info.URL)
+	connTypeList, pushurllist, err := rtmprelay.GetStaticPushList(s.info.URL)
 	if err != nil || len(pushurllist) == 0 {
 		return
 	}
+	cs := &core.ChunkStream{}
+	cs.Data = packet.Data
+	cs.Length = uint32(len(packet.Data))
+	cs.Timestamp = packet.TimeStamp
 
-	for _, pushurl := range pushurllist {
+	if packet.IsVideo {
+		cs.TypeID = av.TAG_VIDEO
+	} else {
+		if packet.IsMetadata {
+			cs.TypeID = av.TAG_SCRIPTDATAAMF0
+		} else {
+			cs.TypeID = av.TAG_AUDIO
+		}
+	}
+	for index, pushurl := range pushurllist {
 		staticpushObj, err := rtmprelay.GetStaticPushObject(pushurl)
 		if (staticpushObj != nil) && (err == nil) {
-			cs := &core.ChunkStream{}
-			cs.Data = packet.Data
-			cs.Length = uint32(len(packet.Data))
-			cs.Timestamp = packet.TimeStamp
-
-			if packet.IsVideo {
-				cs.TypeID = av.TAG_VIDEO
-			} else {
-				if packet.IsMetadata {
-					cs.TypeID = av.TAG_SCRIPTDATAAMF0
-				} else {
-					cs.TypeID = av.TAG_AUDIO
-				}
-			}
 			staticpushObj.Send(cs)
 		} else {
 			log.Errorf("SendStaticPush GetStaticPushObject %s error", pushurl)
+			staticpushObj := rtmprelay.GetAndCreateStaticPushObject(connTypeList[index], pushurl)
+			if staticpushObj != nil {
+				err = staticpushObj.Start()
+				if err != nil {
+					log.Errorf("restart staticpush error url=%s, error=%v", pushurl, err)
+					return
+				}
+				log.Warningf("restart staticpush ok url=%s", pushurl)
+				staticpushObj.Send(cs)
+				return
+			}
 		}
 	}
 }
 
 func (s *Stream) TransStart() {
+	defer func() {
+		s.IsPublishFlag = false
+		if r := recover(); r != nil {
+			log.Errorf("TransStart info(%v) panic:%v", s.info, r)
+		}
+	}()
 	s.isStart = true
 	var p av.Packet
 
@@ -356,7 +390,7 @@ func (s *Stream) CheckAlive() (n int) {
 	for item := range s.ws.IterBuffered() {
 		v := item.Val.(*PackWriterCloser)
 		if v.w != nil {
-			//log.Infof("Stream.CheckAlive.write Alive ok urlkey=%s", s.info.Key)
+			log.Debugf("Stream.CheckAlive.write Alive ok urlkey=%s", s.info.Key)
 			if !v.w.Alive() {
 				s.ws.Remove(item.Key)
 				log.Error("Stream.CheckAlive play error:", s.info.Key)
