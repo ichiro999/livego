@@ -19,7 +19,7 @@ type RtmpPull struct {
 	connectFlag bool
 	connectPlayClient    *core.ConnClient
 	writer Writer
-	connLock sync.Locker
+	connLock sync.RWMutex
 }
 
 func NewRtmpPull(url string) *RtmpPull {
@@ -72,6 +72,7 @@ func (self *RtmpPull) rtmpConnect() error {
 
 	self.connectPlayClient = core.NewConnClient()
 
+	log.Debugf("rtmppull rtmpconnect start url=%s", self.url)
 	if self.clientConn != nil {
 		err = self.connectPlayClient.StartOnConn(*self.clientConn, self.url, av.PLAY)
 	} else {

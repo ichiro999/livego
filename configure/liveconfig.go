@@ -41,11 +41,6 @@ type RecordConfig struct {
 	Path          string `json:"path"`
 }
 
-type SubStaticPush struct {
-	Master_prefix string
-	Sub_prefix    string
-}
-
 type StaticPushInfo struct {
 	ConnType      string
 	Master_prefix string
@@ -66,8 +61,9 @@ type ServerInfo struct {
 	Report          []string
 	Static_push     []StaticPushInfo
 	Static_pull     []StaticPullInfo
-	Sub_static_push []SubStaticPush
 	Recordcfg       []RecordConfig `json:"record"`
+	Upstream_enable string `json:"upstream_enable"`
+	Upstream_url    string `json:"upstream_url"`
 }
 
 type ServerCfg struct {
@@ -110,17 +106,6 @@ func LoadConfig(configfilename string) error {
 
 	log.Warning("Chunk size:", RtmpServercfg.Chunksize)
 
-	isStaticPushEnable = false
-	isSubStaticPushEnable = false
-	for _, serverItem := range RtmpServercfg.Servers {
-		if serverItem.Static_push != nil && len(serverItem.Static_push) > 0 {
-			isStaticPushEnable = true
-		}
-		if serverItem.Sub_static_push != nil && len(serverItem.Sub_static_push) > 0 {
-			isSubStaticPushEnable = true
-		}
-	}
-
 	return nil
 }
 
@@ -151,6 +136,20 @@ func IsRecordEnable(publishUrl string) (bool, RecordConfig) {
 		break
 	}
 	return isEnable, recCfg
+}
+
+func GetUpstreamCfg(appid string) (upstreamUrl string, enable bool) {
+    enable = false
+
+    for _, serverItem := range RtmpServercfg.Servers {
+    	if serverItem.Servername == appid {
+    		upstreamUrl = serverItem.Upstream_url
+    		if serverItem.Upstream_enable == "enable" {
+				enable = true
+			}
+		}
+	}
+    return
 }
 
 func GetReportList() []string {
@@ -295,60 +294,6 @@ func GetStaticPushUrlList(rtmpurl string) (connTypeArray []string, retArray []st
 				}
 				bRet = true
 			}
-		}
-	}
-
-	//log.Printf("GetStaticPushUrlList:%v, %v", retArray, bRet)
-	return
-}
-
-func GetSubStaticMasterPushUrl(rtmpurl string) (retUpstream string, bRet bool) {
-	if !isSubStaticPushEnable {
-		return "", false
-	}
-
-	retUpstream = ""
-	bRet = false
-
-	url := rtmpurl[7:]
-
-	index := strings.Index(url, "/")
-	if index <= 0 {
-		return
-	}
-	url = url[index+1:]
-
-	bFoundFlag := false
-	foundMasterPrefix := ""
-	for _, serverinfo := range RtmpServercfg.Servers {
-		for _, substaticpushItem := range serverinfo.Sub_static_push {
-			masterPrefix := substaticpushItem.Master_prefix
-			subPrefix := substaticpushItem.Sub_prefix
-			if strings.Contains(url, subPrefix) {
-				foundMasterPrefix = masterPrefix
-				bFoundFlag = true
-				break
-			}
-		}
-
-		if bFoundFlag {
-			for _, staticpushItem := range serverinfo.Static_push {
-				masterPrefix := staticpushItem.Master_prefix
-				upstream := staticpushItem.Upstream
-				if foundMasterPrefix == masterPrefix {
-					newPrefix := ""
-					index := strings.Index(masterPrefix, "/")
-					if index <= 0 {
-						newPrefix = masterPrefix
-					} else {
-						newPrefix = masterPrefix[index+1:]
-					}
-					retUpstream = fmt.Sprintf("%s/%s", upstream, newPrefix)
-					bRet = true
-					return
-				}
-			}
-			break
 		}
 	}
 

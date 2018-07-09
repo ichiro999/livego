@@ -134,15 +134,7 @@ func (s *Server) handleConn(conn *core.Conn) error {
 	log.Infof("handleConn: IsPublisher=%v", connServer.IsPublisher())
 	if connServer.IsPublisher() {
 		reader := NewVirReader(connServer)
-		/*
-			//从宽处理，新来的覆盖旧的流。
-				if rtmpstream, ok := s.handler.(*RtmpStream); ok {
-					if rtmpstream.IsExist(reader) {
-						connServer.Close(nil)
-						return nil
-					}
-				}
-		*/
+
 		err := s.handler.HandleReader(reader)
         if err != nil {
 			connServer.Close(err)

@@ -21,14 +21,22 @@ var (
 
 type RtmpStream struct {
 	streams cmap.ConcurrentMap //key
+	upstreamMgrObj *UpstreamMgr
 }
 
 func NewRtmpStream() *RtmpStream {
 	ret := &RtmpStream{
 		streams: cmap.New(),
+
 	}
+	ret.InitUpstreamMgr()
 	go ret.CheckAlive()
 	return ret
+}
+
+func (rs *RtmpStream) InitUpstreamMgr(){
+    rs.upstreamMgrObj = NewUpstreaMgr(rs)
+	rs.upstreamMgrObj.Start()
 }
 
 func (rs *RtmpStream) IsExist(r av.ReadCloser) bool {
@@ -83,6 +91,8 @@ func (rs *RtmpStream) HandleWriter(w av.WriteCloser) {
 	ok := rs.streams.Has(info.Key)
 	if !ok {
 		log.Warningf("No rtmp stream exist, create new Stream, info:%v", info)
+		rs.upstreamMgrObj.Notify(info.Key)
+
 		s = NewStream(false)
 		rs.streams.Set(info.Key, s)
 		s.AddWriter(w)
